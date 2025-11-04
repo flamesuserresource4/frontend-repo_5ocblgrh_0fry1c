@@ -1,141 +1,145 @@
-import { Canvas, useFrame } from '@react-three/fiber'
-import { Stars, OrbitControls } from '@react-three/drei'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 
-function Torii({ mouse }) {
-  const group = useRef()
-  const [hovered, setHovered] = useState(false)
+function PetalsCanvas() {
+  const canvasRef = useRef(null)
+  const mouse = useRef({ x: 0.5, y: 0.5 })
+  const petals = useRef([])
+  const rafRef = useRef(0)
 
-  useFrame((state, delta) => {
-    if (!group.current) return
-    const targetX = (mouse.current.x - 0.5) * 1.5
-    const targetY = (0.5 - mouse.current.y) * 0.8
-    group.current.position.x += (targetX - group.current.position.x) * 0.1
-    group.current.position.y += (targetY - group.current.position.y) * 0.1
-    const rot = hovered ? 0.6 : 0.2
-    group.current.rotation.y += delta * rot
-  })
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+    const dpr = window.devicePixelRatio || 1
 
-  return (
-    <group ref={group} onPointerOver={() => setHovered(true)} onPointerOut={() => setHovered(false)}>
-      <mesh position={[-0.8, -0.2, 0]}>
-        <boxGeometry args={[0.15, 1.2, 0.15]} />
-        <meshStandardMaterial color={hovered ? 'black' : 'white'} roughness={0.9} metalness={0.1} />
-      </mesh>
-      <mesh position={[0.8, -0.2, 0]}>
-        <boxGeometry args={[0.15, 1.2, 0.15]} />
-        <meshStandardMaterial color={hovered ? 'black' : 'white'} roughness={0.9} metalness={0.1} />
-      </mesh>
-      <mesh position={[0, 0.5, 0]}>
-        <boxGeometry args={[2.2, 0.12, 0.2]} />
-        <meshStandardMaterial color={'white'} roughness={0.8} />
-      </mesh>
-      <mesh position={[0, 0.35, 0]}>
-        <boxGeometry args={[1.9, 0.1, 0.18]} />
-        <meshStandardMaterial color={'white'} roughness={0.8} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]}>
-        <planeGeometry args={[10, 10]} />
-        <meshStandardMaterial color={'#efefef'} />
-      </mesh>
-    </group>
-  )
-}
-
-function PetalField({ mouse, count = 300 }) {
-  const points = useMemo(() => {
-    const p = []
-    for (let i = 0; i < count; i++) {
-      p.push({
-        x: (Math.random() - 0.5) * 6,
-        y: (Math.random() - 0.5) * 4,
-        z: (Math.random() - 0.5) * 4,
-        s: Math.random() * 0.02 + 0.005,
-      })
+    const init = () => {
+      canvas.width = canvas.clientWidth * dpr
+      canvas.height = canvas.clientHeight * dpr
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      petals.current = Array.from({ length: 220 }, () => ({
+        x: Math.random() * canvas.clientWidth,
+        y: Math.random() * canvas.clientHeight,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: (Math.random() - 0.2) * 0.6 - 0.2,
+        r: Math.random() * 8 + 3,
+        a: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 0.03,
+      }))
     }
-    return p
-  }, [count])
-  const ref = useRef()
-  useFrame(() => {
-    if (!ref.current) return
-    ref.current.children.forEach((m) => {
-      const dx = (mouse.current.x - 0.5) * 6 - m.position.x
-      const dy = (0.5 - mouse.current.y) * 4 - m.position.y
-      const dz = Math.sin((mouse.current.x + mouse.current.y) * Math.PI) - m.position.z
-      m.position.x += dx * 0.002
-      m.position.y += dy * 0.002
-      m.position.z += dz * 0.002
-      m.rotation.z += m.userData.s * 5
-      m.scale.setScalar(1 + Math.max(0, 0.6 - m.position.distanceTo({ x: 0, y: 0, z: 0 })))
-    })
-  })
-  return (
-    <group ref={ref}>
-      {points.map((p, i) => (
-        <mesh key={i} position={[p.x, p.y, p.z]} userData={{ s: p.s }}>
-          <planeGeometry args={[0.05, 0.02]} />
-          <meshStandardMaterial color={'white'} roughness={1} metalness={0} />
-        </mesh>
-      ))}
-    </group>
-  )
+    init()
+
+    const onResize = () => init()
+    window.addEventListener('resize', onResize)
+
+    const loop = () => {
+      rafRef.current = requestAnimationFrame(loop)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight)
+
+      for (const p of petals.current) {
+        // gentle attraction to mouse
+        p.vx += ((mouse.current.x * canvas.clientWidth) - p.x) * 0.00005
+        p.vy += ((mouse.current.y * canvas.clientHeight) - p.y) * 0.00005
+        p.x += p.vx
+        p.y += p.vy
+        p.vx *= 0.99
+        p.vy = p.vy * 0.99 + 0.02
+        p.a += p.spin
+
+        // wrap
+        if (p.x < -20) p.x = canvas.clientWidth + 20
+        if (p.x > canvas.clientWidth + 20) p.x = -20
+        if (p.y > canvas.clientHeight + 20) p.y = -20
+
+        // draw petal (tilted ellipse)
+        ctx.save()
+        ctx.translate(p.x, p.y)
+        ctx.rotate(p.a)
+        ctx.scale(1.4, 1)
+        ctx.beginPath()
+        ctx.ellipse(0, 0, p.r, p.r * 0.45, 0, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(0,0,0,0.85)'
+        ctx.fill()
+        ctx.restore()
+      }
+
+      // paper grain overlay
+      ctx.fillStyle = 'rgba(0,0,0,0.02)'
+      for (let i = 0; i < 80; i++) {
+        ctx.fillRect(Math.random() * canvas.clientWidth, Math.random() * canvas.clientHeight, 1, 1)
+      }
+    }
+    loop()
+
+    const move = (e) => {
+      const rect = canvas.getBoundingClientRect()
+      mouse.current.x = (e.clientX - rect.left) / rect.width
+      mouse.current.y = (e.clientY - rect.top) / rect.height
+      const root = canvas.parentElement
+      if (root) {
+        root.style.setProperty('--mx', `${mouse.current.x * 100}%`)
+        root.style.setProperty('--my', `${mouse.current.y * 100}%`)
+      }
+    }
+    window.addEventListener('mousemove', move)
+
+    return () => {
+      cancelAnimationFrame(rafRef.current)
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('mousemove', move)
+    }
+  }, [])
+
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
 }
 
 export default function Hero() {
-  const mouse = useRef({ x: 0.5, y: 0.5 })
-
-  const onMouseMove = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    mouse.current.x = (e.clientX - rect.left) / rect.width
-    mouse.current.y = (e.clientY - rect.top) / rect.height
-    const root = e.currentTarget
-    root.style.setProperty('--mx', `${mouse.current.x * 100}%`)
-    root.style.setProperty('--my', `${mouse.current.y * 100}%`)
-  }
-
   return (
-    <section className="relative w-full h-screen bg-white text-black overflow-hidden" onMouseMove={onMouseMove}>
-      <div className="absolute inset-0" aria-hidden>
-        <Canvas camera={{ position: [0, 0.6, 3], fov: 50 }}>
-          <ambientLight intensity={0.7} />
-          <directionalLight position={[2, 3, 2]} intensity={0.6} />
-          <Torii mouse={mouse} />
-          <PetalField mouse={mouse} />
-          <Stars radius={50} depth={20} count={2000} factor={2} saturation={0} fade speed={0.4} />
-          <OrbitControls enableZoom={false} enablePan={false} enableRotate={false} />
-        </Canvas>
-      </div>
+    <section className="relative w-full h-[90vh] bg-white text-black overflow-hidden">
+      {/* Interactive background */}
+      <PetalsCanvas />
 
+      {/* Gradient/texture overlay that doesn't block interactions */}
       <div
+        aria-hidden
         className="pointer-events-none absolute inset-0 opacity-40"
         style={{
           backgroundImage:
-            'radial-gradient(circle at var(--mx,50%) var(--my,50%), rgba(0,0,0,0.08), transparent 30%), repeating-linear-gradient(0deg, rgba(0,0,0,0.02) 0px, rgba(0,0,0,0.02) 1px, transparent 1px, transparent 2px)',
-          backgroundBlendMode: 'multiply',
+            'radial-gradient(circle at var(--mx,50%) var(--my,50%), rgba(0,0,0,0.08), transparent 32%), repeating-linear-gradient(0deg, rgba(0,0,0,0.02) 0px, rgba(0,0,0,0.02) 1px, transparent 1px, transparent 2px)'
         }}
       />
 
+      {/* Torii mark (SVG) with subtle parallax */}
       <motion.div
         className="relative z-10 h-full flex flex-col items-center justify-center text-center select-none"
-        style={{ textShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1 }}
+        transition={{ duration: 0.8 }}
       >
+        <motion.div
+          className="mb-6"
+          animate={{ x: ['-1%', '1%', '-1%'] }}
+          transition={{ duration: 10, repeat: Infinity }}
+        >
+          <svg width="220" height="140" viewBox="0 0 220 140" role="img" aria-label="Torii gate">
+            <g fill="#000">
+              <rect x="30" y="20" width="160" height="14" />
+              <rect x="50" y="40" width="120" height="10" />
+              <rect x="60" y="50" width="20" height="70" />
+              <rect x="140" y="50" width="20" height="70" />
+            </g>
+          </svg>
+        </motion.div>
+
         <motion.h1
           className="text-6xl md:text-8xl font-black tracking-tight"
-          animate={{ x: ['-1%', '1%'], rotateZ: [0, 0.2, 0], filter: ['contrast(100%)', 'contrast(120%)'] }}
-          transition={{ repeat: Infinity, repeatType: 'mirror', duration: 8 }}
+          animate={{ rotateZ: [0, 0.3, 0], filter: ['contrast(100%)', 'contrast(120%)', 'contrast(100%)'] }}
+          transition={{ duration: 8, repeat: Infinity }}
         >
           和 Tech
         </motion.h1>
-        <motion.p
-          className="mt-4 max-w-2xl text-lg md:text-xl"
-          animate={{ x: ['1%', '-1%'] }}
-          transition={{ repeat: Infinity, repeatType: 'mirror', duration: 6 }}
-        >
-          A monochrome Japanese-inspired interactive showcase. Move your mouse—everything responds.
+        <motion.p className="mt-4 max-w-2xl text-lg md:text-xl opacity-80" animate={{ y: [0, -2, 0] }} transition={{ duration: 6, repeat: Infinity }}>
+          A monochrome Japanese-inspired interactive showcase. Move your mouse — everything responds.
         </motion.p>
         <motion.div className="mt-8 inline-flex items-center gap-4">
           <motion.button
